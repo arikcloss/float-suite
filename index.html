@@ -107,6 +107,7 @@ main{flex:1;max-width:1180px;margin:0 auto;padding:0 28px;width:100%;position:re
 .card-stripe.c-paint{background:var(--c-primary)}
 .card-stripe.c-inkling{background:var(--c-pink)}
 .card-stripe.c-thesis{background:var(--c-blue)}
+.card-stripe.c-notes{background:#9966FF}
 .card-body{padding:24px;flex:1;display:flex;flex-direction:column;gap:10px}
 .card-title{font-size:24px;display:flex;align-items:center;gap:10px}
 .card-version{font-family:var(--font-ui);font-size:10px;background:var(--c-text);color:var(--c-bg);padding:2px 6px}
@@ -356,6 +357,29 @@ footer .footer-bottom{max-width:1180px;margin:30px auto 0;padding-top:18px;borde
         </div>
       </div>
     </article>
+
+    <article class="card">
+      <div class="card-stripe c-notes"></div>
+      <div class="card-body">
+        <div class="card-title">
+          <span data-i18n="portal.app_notes_title">Notebase</span>
+          <span class="card-version">v1.0</span>
+        </div>
+        <p class="card-desc" data-i18n="portal.app_notes_desc">A local-first Markdown knowledge base with live preview, backlinks, tags and plain-text export. Your notes never leave your browser.</p>
+        <div class="card-tech">
+          <span class="tech-chip">MARKDOWN</span>
+          <span class="tech-chip">WIKI LINKS</span>
+          <span class="tech-chip">TAGS</span>
+          <span class="tech-chip">MD/TXT/PDF</span>
+        </div>
+        <div class="card-actions">
+          <a href="notes.html" class="btn btn-primary card-launch">
+            <i class="fa-solid fa-book-open"></i> <span data-i18n="common.open">Open</span>
+          </a>
+          <a href="notes.html" class="btn card-secondary" aria-label="Open Notebase" title="Open"><i class="fa-solid fa-arrow-right"></i></a>
+        </div>
+      </div>
+    </article>
   </section>
 
   <!-- Features -->
@@ -486,6 +510,7 @@ footer .footer-bottom{max-width:1180px;margin:30px auto 0;padding-top:18px;borde
       <a href="paint.html" data-i18n="portal.app_paint_title">Paint.web</a>
       <a href="inkling.html" data-i18n="portal.app_inkling_title">Inkling</a>
       <a href="thesis.html" data-i18n="portal.app_thesis_title">Thesis</a>
+      <a href="notes.html" data-i18n="portal.app_notes_title">Notebase</a>
     </div>
     <div>
       <h4 data-i18n="common.help">Help</h4>
@@ -681,6 +706,7 @@ footer .footer-bottom{max-width:1180px;margin:30px auto 0;padding-top:18px;borde
   Float.addShortcut({key:'1', fn:() => location.href = 'paint.html', label:'Open Paint.web', group:'file'});
   Float.addShortcut({key:'2', fn:() => location.href = 'inkling.html', label:'Open Inkling', group:'file'});
   Float.addShortcut({key:'3', fn:() => location.href = 'thesis.html', label:'Open Thesis', group:'file'});
+  Float.addShortcut({key:'4', fn:() => location.href = 'notes.html', label:'Open Notebase', group:'file'});
   Float.addShortcut({key:'/', fn:() => Float.showShortcuts(), label:'Show shortcuts', group:'help', mod:[]});
   // The ? shortcut is wired inside float.js itself.
 
@@ -691,6 +717,7 @@ footer .footer-bottom{max-width:1180px;margin:30px auto 0;padding-top:18px;borde
   Float.registerCommand({id:'portal.paint', label:'Open Paint.web', group:'apps', i18n:'portal.app_paint_title', run:() => location.href='paint.html', shortcut:{key:'1'}});
   Float.registerCommand({id:'portal.inkling', label:'Open Inkling', group:'apps', i18n:'portal.app_inkling_title', run:() => location.href='inkling.html', shortcut:{key:'2'}});
   Float.registerCommand({id:'portal.thesis', label:'Open Thesis', group:'apps', i18n:'portal.app_thesis_title', run:() => location.href='thesis.html', shortcut:{key:'3'}});
+  Float.registerCommand({id:'portal.notes', label:'Open Notebase', group:'apps', i18n:'portal.app_notes_title', run:() => location.href='notes.html', shortcut:{key:'4'}});
   Float.registerCommand({id:'portal.theme', label:'Cycle Theme', group:'view', i18n:'common.toggle_theme', run:() => Float.cycleTheme(), shortcut:{key:'D'}});
   Float.registerCommand({id:'portal.top', label:'Back to Top', group:'view', i18n:'common.back_to_suite', run:() => window.scrollTo({top:0,behavior:'smooth'}), shortcut:{key:'T'}});
 

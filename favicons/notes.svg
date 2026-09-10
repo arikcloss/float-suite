@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Notebase — purple background, black open book, neo-brutalist. -->
+  <!-- Background -->
+  <rect x="0" y="0" width="64" height="64" fill="#9966FF"/>
+  <rect x="2" y="2" width="60" height="60" fill="none" stroke="#000" stroke-width="3.5"/>
+  <!-- Hard shadow offset (neo-brutalist) -->
+  <g transform="translate(3,3)">
+    <!-- Left page -->
+    <path d="M 10 24 L 30 20 L 30 46 C 23 45 16 45 10 46 Z" fill="#000"/>
+    <!-- Right page -->
+    <path d="M 54 24 L 34 20 L 34 46 C 41 45 48 45 54 46 Z" fill="#000"/>
+    <!-- Ribbon -->
+    <path d="M 29 40 L 35 40 L 35 56 L 32 53 L 29 56 Z" fill="#000"/>
+  </g>
+  <!-- Foreground (same shapes, no offset) -->
+  <!-- Left page -->
+  <path d="M 10 24 L 30 20 L 30 46 C 23 45 16 45 10 46 Z" fill="#fff" stroke="#000" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Right page -->
+  <path d="M 54 24 L 34 20 L 34 46 C 41 45 48 45 54 46 Z" fill="#fff" stroke="#000" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Spine notch -->
+  <path d="M 30 20 L 34 20 L 32 27 Z" fill="#000"/>
+  <!-- Inner text lines (left page) -->
+  <line x1="14" y1="28" x2="26" y2="27" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+  <line x1="14" y1="33" x2="23" y2="32" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+  <!-- Inner text line (right page) -->
+  <line x1="38" y1="28" x2="50" y2="27" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+  <!-- Ribbon -->
+  <path d="M 29 40 L 35 40 L 35 56 L 32 53 L 29 56 Z" fill="#FF3355" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

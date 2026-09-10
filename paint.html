@@ -132,6 +132,19 @@ body{display:flex;flex-direction:column}
 .menubar-status .status-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;background:var(--c-surface);border:1px solid var(--c-border)}
 .menubar-status .status-chip.active{background:var(--c-primary);color:#000}
 
+/* Rulers */
+.ruler{position:absolute;background:var(--c-surface);z-index:5;overflow:hidden;pointer-events:none}
+.ruler-x{top:0;left:0;right:0;height:18px;border-bottom:1px solid var(--c-border);display:none}
+.ruler-y{top:0;left:0;bottom:0;width:18px;border-right:1px solid var(--c-border);display:none}
+.ruler canvas{display:block}
+.viewport.rulers-on .ruler-x,.viewport.rulers-on .ruler-y{display:block}
+
+/* Layer properties */
+.layer-props{padding:8px;background:var(--c-surface);border:2px solid var(--c-border);margin-top:8px}
+.layer-props label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--c-muted);margin:6px 0 2px}
+.layer-props input[type="range"]{width:100%;height:14px}
+.layer-props select{width:100%;padding:4px;font-family:var(--font-ui);font-size:10px;background:var(--c-bg);border:1px solid var(--c-border);font-weight:700}
+
 /* Text overlay */
 #text-overlay{position:absolute;background:var(--c-surface);border:var(--bw) solid var(--c-border);padding:6px;z-index:50;min-width:140px;box-shadow:var(--shadow)}
 #text-overlay textarea{width:100%;min-height:40px;resize:both;background:transparent;border:none;outline:none;font-family:inherit}
@@ -253,6 +266,8 @@ body{display:flex;flex-direction:column}
     <div id="canvas-wrapper">
       <div id="selection-overlay"></div>
     </div>
+    <div class="ruler ruler-x" id="ruler-x"><canvas id="ruler-x-canvas"></canvas></div>
+    <div class="ruler ruler-y" id="ruler-y"><canvas id="ruler-y-canvas"></canvas></div>
     <div id="ctx-cursor"></div>
     <div id="pan-indicator">0%, 0%</div>
   </div>
@@ -273,6 +288,29 @@ body{display:flex;flex-direction:column}
           <button class="btn btn-xs" id="btn-del-layer" title="Delete"><i class="fa-solid fa-trash"></i></button>
         </div>
         <div id="layers-list"></div>
+        <div class="layer-props" id="layer-props">
+          <label data-i18n="common.opacity">Opacity</label>
+          <input type="range" id="layer-opacity" min="0" max="100" value="100" title="Layer opacity">
+          <label data-i18n="common.blend_mode">Blend Mode</label>
+          <select id="layer-blend" title="Blend mode">
+            <option value="normal" data-i18n="common.normal">Normal</option>
+            <option value="multiply" data-i18n="common.multiply">Multiply</option>
+            <option value="screen" data-i18n="common.screen">Screen</option>
+            <option value="overlay" data-i18n="common.overlay">Overlay</option>
+            <option value="darken" data-i18n="common.darken">Darken</option>
+            <option value="lighten" data-i18n="common.lighten">Lighten</option>
+            <option value="color-dodge" data-i18n="common.color_dodge">Color Dodge</option>
+            <option value="color-burn" data-i18n="common.color_burn">Color Burn</option>
+            <option value="hard-light" data-i18n="common.hard_light">Hard Light</option>
+            <option value="soft-light" data-i18n="common.soft_light">Soft Light</option>
+            <option value="difference" data-i18n="common.difference">Difference</option>
+            <option value="exclusion" data-i18n="common.exclusion">Exclusion</option>
+            <option value="hue" data-i18n="common.hue">Hue</option>
+            <option value="saturation" data-i18n="common.saturation">Saturation</option>
+            <option value="color" data-i18n="common.color">Color</option>
+            <option value="luminosity" data-i18n="common.luminosity">Luminosity</option>
+          </select>
+        </div>
       </div>
       <div class="panel-section" id="pane-history">
         <div id="history-list"></div>
@@ -457,6 +495,21 @@ body{display:flex;flex-direction:column}
   </div>
 </div>
 
+<!-- Recover session -->
+<div class="modal-overlay" id="modal-recover">
+  <div class="modal">
+    <div class="modal-header"><h3 data-i18n="paint.recover_title">Recover Session</h3></div>
+    <div class="modal-body">
+      <p id="recover-time" style="font-family:var(--font-ui);font-size:11px;color:var(--c-muted);margin-bottom:8px"></p>
+      <p data-i18n="paint.recover_body">A previous autosave was found. Restore it?</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="recover-discard" data-i18n="paint.recover_discard">Discard</button>
+      <button class="btn btn-primary" id="recover-restore" data-i18n="paint.recover_restore">Restore</button>
+    </div>
+  </div>
+</div>
+
 <!-- Main script -->
 <script>
 (function(){
@@ -536,6 +589,7 @@ body{display:flex;flex-direction:column}
       Float.applyTheme(Float.getThemeMode());
       Float.updateThemeIcons();
       I.apply();
+      this.restoreAutosave();
       I.on(() => { this.bindHUD(); this.renderLayers(); this.renderHistory(); });
       this.updateBrushPreview();
       this.updateColorUI();
@@ -736,6 +790,7 @@ body{display:flex;flex-direction:column}
       status.appendChild(zoom);
       status.appendChild(size);
       status.appendChild(gridBtn);
+      status.appendChild(el('button', {class:'status-chip', id:'mb-rulers', onclick:() => this.toggleRulers()}, I.t('common.rulers')));
     },
 
     /* ---- Canvas / layers ---- */
@@ -781,6 +836,7 @@ body{display:flex;flex-direction:column}
       };
       this.layers.push(layer);
       this.activeLayerId = id;
+      this.applyLayerStyle(layer);
       this.renderLayers();
       this.updateInfo();
       return layer;
@@ -800,7 +856,7 @@ body{display:flex;flex-direction:column}
     deleteLayer(){
       const l = this.getLayer();
       if(!l) return;
-      if(this.layers.length <= 1){ toast('Cannot delete the only layer', 'warn'); return; }
+      if(this.layers.length <= 1){ toast(I.t('paint.toast_only_layer'), 'warn'); return; }
       l.canvas.remove();
       const idx = this.layers.indexOf(l);
       this.layers.splice(idx, 1);
@@ -823,7 +879,7 @@ body{display:flex;flex-direction:column}
 
     mergeDown(){
       const idx = this.layers.findIndex(l => l.id === this.activeLayerId);
-      if(idx <= 0){ toast('No layer below', 'warn'); return; }
+      if(idx <= 0){ toast(I.t('paint.toast_no_layer_below'), 'warn'); return; }
       const below = this.layers[idx-1];
       const cur = this.layers[idx];
       below.ctx.globalAlpha = cur.opacity;
@@ -1223,10 +1279,10 @@ body{display:flex;flex-direction:column}
             this.cloneState.active = true;
             this.cloneState.srcX = sc.x;
             this.cloneState.srcY = sc.y;
-            toast('Clone source set', 'info', 1200);
+            toast(I.t('paint.toast_clone_src'), 'info', 1200);
             this.isDrawing = false;
           }else if(!this.cloneState.active){
-            toast('Alt+click to set source', 'warn', 1400);
+            toast(I.t('paint.toast_clone_alt'), 'warn', 1400);
             this.isDrawing = false;
           }else{
             // Clone from src to current
@@ -1447,7 +1503,7 @@ body{display:flex;flex-direction:column}
       const data = layer.ctx.getImageData(clamp(x,0,this.width-1), clamp(y,0,this.height-1), 1, 1).data;
       const hex = '#' + [data[0],data[1],data[2]].map(v => v.toString(16).padStart(2,'0')).join('');
       this.setColor(hex, 'primary');
-      toast('Picked ' + hex.toUpperCase(), 'info', 1200);
+      toast(I.t('paint.toast_picked', {color: hex.toUpperCase()}), 'info', 1200);
     },
 
     floodFill(ctx, x, y, fillHex){
@@ -1519,7 +1575,7 @@ body{display:flex;flex-direction:column}
       this.selection.w = maxX - minX + 1;
       this.selection.h = maxY - minY + 1;
       this.updateSelectionOverlay();
-      toast('Selected ' + count + ' px', 'success', 1200);
+      toast(I.t('paint.toast_selected', {count}), 'success', 1200);
     },
 
     cloneDraw(layer, x, y){
@@ -1717,7 +1773,7 @@ body{display:flex;flex-direction:column}
       tmp.width = w; tmp.height = h;
       tmp.getContext('2d').drawImage(layer.canvas, x, y, w, h, 0, 0, w, h);
       this.clipboard = {canvas: tmp, w, h};
-      toast('Copied', 'success', 1200);
+      toast(I.t('paint.toast_copied'), 'success', 1200);
     },
     cutSelection(){
       this.copySelection();
@@ -1732,7 +1788,7 @@ body{display:flex;flex-direction:column}
       this.renderLayers();
     },
     pasteAsLayer(){
-      if(!this.clipboard){ toast('Nothing to paste', 'warn'); return; }
+      if(!this.clipboard){ toast(I.t('paint.toast_nothing_paste'), 'warn'); return; }
       const l = this.addLayer('Pasted');
       l.ctx.drawImage(this.clipboard.canvas, 0, 0);
       this.history.save('Paste');
@@ -1760,12 +1816,15 @@ body{display:flex;flex-direction:column}
         l.canvas.width = w; l.canvas.height = h;
         l.ctx.clearRect(0, 0, w, h);
         l.ctx.drawImage(snaps[i], 0, 0);
+        l.offsetX = 0; l.offsetY = 0;
+        l.canvas.style.left = '0';
+        l.canvas.style.top = '0';
       });
       this.clearSelection();
       this.centerCanvas();
       this.history.save('Crop');
       this.updateInfo();
-      toast('Cropped', 'success', 1200);
+      toast(I.t('paint.toast_cropped'), 'success', 1200);
     },
 
     /* ---- Transform layer ---- */
@@ -1788,20 +1847,14 @@ body{display:flex;flex-direction:column}
           l.ctx.drawImage(tmp, 0, 0);
           break;
         case 'rot-cw':
-          l.canvas.width = this.height; l.canvas.height = this.width;
-          l.ctx.translate(this.height, 0); l.ctx.rotate(Math.PI/2);
-          l.ctx.drawImage(tmp, 0, 0);
-          l.canvas.width = this.width; l.canvas.height = this.height;
-          // Re-do with proper dimensions
-          l.ctx.restore();
-          l.ctx.save();
-          l.ctx.translate(this.height/2, this.width/2);
-          l.ctx.rotate(Math.PI/2);
-          l.ctx.drawImage(tmp, -this.width/2, -this.height/2);
+          l.ctx.translate(this.width / 2, this.height / 2);
+          l.ctx.rotate(Math.PI / 2);
+          l.ctx.drawImage(tmp, -this.width / 2, -this.height / 2);
           break;
         case 'rot-ccw':
-          l.ctx.translate(0, this.width); l.ctx.rotate(-Math.PI/2);
-          l.ctx.drawImage(tmp, 0, 0);
+          l.ctx.translate(this.width / 2, this.height / 2);
+          l.ctx.rotate(-Math.PI / 2);
+          l.ctx.drawImage(tmp, -this.width / 2, -this.height / 2);
           break;
       }
       l.ctx.restore();
@@ -1985,6 +2038,7 @@ body{display:flex;flex-direction:column}
         `translate(calc(-50% + ${this.panX}px), calc(-50% + ${this.panY}px)) scale(${this.zoom})`;
       this.ui.wrapper.style.width = this.width + 'px';
       this.ui.wrapper.style.height = this.height + 'px';
+      this.renderRulers();
     },
     showPanIndicator(){
       const ind = this.ui.panInd;
@@ -1999,10 +2053,73 @@ body{display:flex;flex-direction:column}
       const mb = $('#mb-grid');
       if(mb) mb.classList.toggle('active', this.showGrid);
     },
-    toggleRulers(){ this.showRulers = !this.showRulers; toast('Rulers: ' + (this.showRulers?'on':'off'), 'info', 1200); },
+    toggleRulers(){
+      this.showRulers = !this.showRulers;
+      this.ui.viewport.classList.toggle('rulers-on', this.showRulers);
+      const mb = $('#mb-rulers');
+      if(mb) mb.classList.toggle('active', this.showRulers);
+      this.renderRulers();
+      toast(this.showRulers ? I.t('paint.toast_rulers_on') : I.t('paint.toast_rulers_off'), 'info', 1200);
+    },
+    renderRulers(){
+      const vp = this.ui.viewport;
+      if(!vp) return;
+      vp.classList.toggle('rulers-on', this.showRulers);
+      if(!this.showRulers) return;
+      const xr = $('#ruler-x'), yr = $('#ruler-y');
+      const xc = $('#ruler-x-canvas'), yc = $('#ruler-y-canvas');
+      if(!xr || !yr || !xc || !yc) return;
+      xc.width = Math.max(1, xr.clientWidth);
+      xc.height = Math.max(1, xr.clientHeight);
+      yc.width = Math.max(1, yr.clientWidth);
+      yc.height = Math.max(1, yr.clientHeight);
+      const css = getComputedStyle(document.documentElement);
+      const muted = css.getPropertyValue('--c-muted').trim() || '#888';
+      const vw = vp.clientWidth, vh = vp.clientHeight;
+      const w = this.width, h = this.height, z = this.zoom;
+      const A = vw / 2 + w / 2 - w * z + this.panX * z;
+      const B = vh / 2 + h / 2 - h * z + this.panY * z;
+      const steps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000];
+      let step = steps[steps.length - 1];
+      for(const s of steps){ if(s * z >= 24){ step = s; break; } }
+      const xctx = xc.getContext('2d');
+      const yctx = yc.getContext('2d');
+      xctx.clearRect(0, 0, xc.width, xc.height);
+      yctx.clearRect(0, 0, yc.width, yc.height);
+      xctx.font = '9px "Space Mono", monospace';
+      xctx.fillStyle = muted;
+      xctx.strokeStyle = muted;
+      xctx.lineWidth = 1;
+      for(let px = -step * 10; px <= w + step * 10; px += step){
+        const X = A + px * z;
+        if(X < -120 || X > vw + 120) continue;
+        xctx.beginPath();
+        xctx.moveTo(X + 0.5, xc.height - 8);
+        xctx.lineTo(X + 0.5, xc.height);
+        xctx.stroke();
+        xctx.fillText(String(px), X + 3, 9);
+      }
+      yctx.font = '8px "Space Mono", monospace';
+      yctx.fillStyle = muted;
+      yctx.strokeStyle = muted;
+      yctx.lineWidth = 1;
+      for(let py = -step * 10; py <= h + step * 10; py += step){
+        const Y = B + py * z;
+        if(Y < -120 || Y > vh + 120) continue;
+        yctx.beginPath();
+        yctx.moveTo(yc.width - 8, Y + 0.5);
+        yctx.lineTo(yc.width, Y + 0.5);
+        yctx.stroke();
+        yctx.save();
+        yctx.translate(11, Y + 9);
+        yctx.rotate(-Math.PI / 2);
+        yctx.fillText(String(py), 0, 0);
+        yctx.restore();
+      }
+    },
     toggleSnap(){
       this.snapEnabled = !this.snapEnabled;
-      toast('Snap: ' + (this.snapEnabled?'on':'off'), 'info', 1200);
+      toast(this.snapEnabled ? I.t('paint.toast_snap_on') : I.t('paint.toast_snap_off'), 'info', 1200);
     },
 
     /* ---- Cursor info ---- */
@@ -2048,11 +2165,29 @@ body{display:flex;flex-direction:column}
           }, el('i', {class:'fa-solid ' + (l.visible?'fa-eye':'fa-eye-slash')}))
         );
         list.appendChild(item);
+        this.applyLayerStyle(l);
         this.renderLayerThumb(l);
       });
       // Active layer name in bottom bar
       const al = this.getLayer();
       $('#bb-layer').textContent = al ? al.name : '—';
+      this.updateLayerProps();
+    },
+    applyLayerStyle(l){
+      if(!l || !l.canvas) return;
+      l.canvas.style.opacity = String(l.opacity);
+      const bm = this.blendToComposite(l.blendMode);
+      l.canvas.style.mixBlendMode = bm === 'source-over' ? 'normal' : bm;
+    },
+    updateLayerProps(){
+      const l = this.getLayer();
+      const op = $('#layer-opacity');
+      const bm = $('#layer-blend');
+      if(!op || !bm) return;
+      op.disabled = !l;
+      bm.disabled = !l;
+      op.value = l ? Math.round(l.opacity * 100) : 100;
+      bm.value = l ? l.blendMode : 'normal';
     },
     renderLayerThumb(l){
       const t = $('#thumb-'+l.id);
@@ -2119,6 +2254,7 @@ body{display:flex;flex-direction:column}
           };
           img.src = s.data;
         });
+        App.nextLayerId = entry.snap.reduce((m, s) => Math.max(m, s.id), 0) + 1;
         App.activeLayerId = entry.activeId;
         this.pos = idx;
         App.centerCanvas();
@@ -2127,11 +2263,11 @@ body{display:flex;flex-direction:column}
         App.updateInfo();
       },
       undo(){
-        if(this.pos <= 0){ toast('Nothing to undo', 'warn', 1000); return; }
+        if(this.pos <= 0){ toast(I.t('paint.toast_nothing_undo'), 'warn', 1000); return; }
         this.restore(this.pos - 1);
       },
       redo(){
-        if(this.pos >= this.stack.length - 1){ toast('Nothing to redo', 'warn', 1000); return; }
+        if(this.pos >= this.stack.length - 1){ toast(I.t('paint.toast_nothing_redo'), 'warn', 1000); return; }
         this.restore(this.pos + 1);
       },
       clear(){ this.stack = []; this.pos = -1; }
@@ -2170,7 +2306,7 @@ body{display:flex;flex-direction:column}
       saved.push(this.primaryColor);
       localStorage.setItem('paint_swatches', JSON.stringify(saved));
       this.initSwatches();
-      toast('Swatch added', 'success', 1000);
+      toast(I.t('paint.toast_swatch_added'), 'success', 1000);
     },
 
     /* ---- Import / Open ---- */
@@ -2180,23 +2316,25 @@ body{display:flex;flex-direction:column}
       reader.onload = e => {
         const img = new Image();
         img.onload = () => {
-          // Resize canvas to fit if first layer is empty background
+          const iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
           const layer = this.getLayer();
           if(layer && layer.name === 'Background'){
-            this.width = img.naturalWidth;
-            this.height = img.naturalHeight;
+            const fit = Math.min(1, 8000 / iw, 8000 / ih);
+            this.width = Math.max(1, Math.round(iw * fit));
+            this.height = Math.max(1, Math.round(ih * fit));
             layer.canvas.width = this.width;
             layer.canvas.height = this.height;
-            layer.ctx.drawImage(img, 0, 0);
+            layer.ctx.drawImage(img, 0, 0, this.width, this.height);
             this.centerCanvas();
           }else{
             const l = this.addLayer(file.name.replace(/\.[^.]+$/, ''));
-            l.ctx.drawImage(img, 0, 0);
+            const scale = Math.min(1, this.width / iw, this.height / ih);
+            l.ctx.drawImage(img, 0, 0, Math.max(1, Math.round(iw * scale)), Math.max(1, Math.round(ih * scale)));
           }
           this.history.save('Import image');
           this.renderLayers();
           this.updateInfo();
-          toast('Imported ' + file.name, 'success');
+          toast(I.t('paint.toast_imported', {name: file.name}), 'success');
         };
         img.src = e.target.result;
       };
@@ -2306,10 +2444,13 @@ body{display:flex;flex-direction:column}
       // on this preview context
       const savedType = this.brushType;
       const savedSize = this.brushSize;
+      const savedTool = this.tool;
+      this.tool = 'brush';
       for(let i = 0; i < 3; i++){
         this.brushSize = sizes[i] * 2;
         this.drawBrushDot(ctx, positions[i], cy, {angle: 0});
       }
+      this.tool = savedTool;
       this.brushSize = savedSize;
       p.innerHTML = ''; p.appendChild(c);
     },
@@ -2333,6 +2474,47 @@ body{display:flex;flex-direction:column}
       };
       this.autosaveTimer = setInterval(save, 30000);
       window.addEventListener('beforeunload', save);
+    },
+    restoreAutosave(){
+      let meta = null;
+      try{ meta = JSON.parse(localStorage.getItem('paint_autosave_meta') || 'null'); }catch(e){}
+      const data = localStorage.getItem('paint_autosave');
+      if(!meta || !data){ this._autosaveData = null; return; }
+      this._autosaveData = data;
+      this._autosaveMeta = meta;
+      const rt = $('#recover-time');
+      if(rt) rt.textContent = I.t('common.modified') + ': ' + new Date(meta.time).toLocaleString(I.getLang());
+      openModal('modal-recover');
+    },
+    recoverRestore(){
+      const data = this._autosaveData, meta = this._autosaveMeta;
+      this._autosaveData = null;
+      closeModal('modal-recover');
+      if(!data || !meta) return;
+      const img = new Image();
+      img.onload = () => {
+        this.width = clamp(parseInt(meta.w,10) || 1280, 1, 8000);
+        this.height = clamp(parseInt(meta.h,10) || 720, 1, 8000);
+        Array.from(this.ui.wrapper.querySelectorAll('canvas')).forEach(c => c.remove());
+        this.layers = [];
+        const layer = this.addLayer(I.t('paint.autosave_name'));
+        layer.ctx.drawImage(img, 0, 0);
+        this.history.clear();
+        this.history.save(I.t('paint.history_recover'));
+        this.renderLayers();
+        this.centerCanvas();
+        this.updateInfo();
+        toast(I.t('paint.toast_autosave_restored', {time: new Date(meta.time).toLocaleString(I.getLang())}), 'success', 2500);
+      };
+      img.src = data;
+    },
+    recoverDiscard(){
+      this._autosaveData = null;
+      closeModal('modal-recover');
+      try{
+        localStorage.removeItem('paint_autosave');
+        localStorage.removeItem('paint_autosave_meta');
+      }catch(e){}
     },
 
     /* ---- UI bindings ---- */
@@ -2439,7 +2621,7 @@ body{display:flex;flex-direction:column}
         ['bright','contrast','saturate','hue'].forEach(k => $('#adj-'+k).value = 0);
         this.updateAdjustments();
         this.renderLayers();
-        toast('Adjustments applied', 'success', 1200);
+        toast(I.t('paint.toast_adjustments'), 'success', 1200);
       });
 
       // Export modal
@@ -2471,6 +2653,26 @@ body{display:flex;flex-direction:column}
         });
       });
 
+      // Layer properties
+      $('#layer-opacity').addEventListener('input', e => {
+        const l = this.getLayer();
+        if(!l) return;
+        l.opacity = clamp(parseInt(e.target.value,10) || 100, 0, 100) / 100;
+        this.applyLayerStyle(l);
+      });
+      $('#layer-opacity').addEventListener('change', () => {
+        this.renderLayers();
+        this.history.save('Layer opacity');
+      });
+      $('#layer-blend').addEventListener('change', e => {
+        const l = this.getLayer();
+        if(!l) return;
+        l.blendMode = e.target.value;
+        this.applyLayerStyle(l);
+        this.renderLayers();
+        this.history.save('Layer blend');
+      });
+
       // Layer actions
       $('#btn-add-layer').addEventListener('click', () => this.addLayer());
       $('#btn-dup-layer').addEventListener('click', () => this.duplicateLayer());
@@ -2486,6 +2688,10 @@ body{display:flex;flex-direction:column}
           $('#pane-' + t.dataset.tab).classList.add('active');
         });
       });
+
+      // Recover modal
+      $('#recover-restore').addEventListener('click', () => this.recoverRestore());
+      $('#recover-discard').addEventListener('click', () => this.recoverDiscard());
 
       // Window resize
       window.addEventListener('resize', () => this.centerCanvas());

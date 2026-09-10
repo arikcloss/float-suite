@@ -1,7 +1,7 @@
 **Web offline-first creative and academic focused tools for the browser.**
 No accounts, no cloud, no tracking. Your work stays on your device.
 
-Three apps, one consistent design system, eight languages.
+Four apps, one consistent design system, eight languages.
 
 ---
 
@@ -12,6 +12,7 @@ Three apps, one consistent design system, eight languages.
 | **Paint.web** | Raster paint studio with layers, filters, adjustments, and shape tools | Illustrators, photo editors, sketchers |
 | **Inkling** | SVG vector editor with pen, shapes, gradients, layers, boolean ops | Logo designers, icon makers, illustrators |
 | **Thesis** | Academic word processor with ABNT/APA/MLA standards, reference generator, real PDF/DOCX/ODT export | Students, researchers, writers |
+| **Notebase** | Local-first Markdown knowledge base with live preview, search, tags, wiki-links and backlinks | Writers, students, second brains |
 
 ---
 
@@ -23,7 +24,7 @@ Three apps, one consistent design system, eight languages.
 
 That's it. No server, no install, no build step. The suite works from a USB stick, an SD card, or your local disk.
 
-> **Offline use:** Once loaded, all three apps work without an internet connection. The first time you export to PDF / DOCX / ODT, the suite fetches small JavaScript libraries from a CDN; after that they're cached by the browser.
+> **Offline use:** Once loaded, all four apps work without an internet connection. The first time you export to PDF / DOCX / ODT, the suite fetches small JavaScript libraries from a CDN; after that they're cached by the browser.
 
 ---
 
@@ -58,7 +59,7 @@ Eight languages are built in. Switch from the language selector on the menu bar 
 - **Light** — forced light
 - **Dark** — forced dark
 
-Themes sync across all four pages (portal + three apps) automatically.
+Themes sync across all five pages (portal + four apps) automatically.
 
 ---
 
@@ -70,6 +71,7 @@ float-suite/
 ├── paint.html              ← Paint.web (raster)
 ├── inkling.html            ← Inkling (vector)
 ├── thesis.html             ← Thesis (academic word processor)
+├── notes.html              ← Notebase (local-first Markdown knowledge base)
 ├── package.json            ← Electron + electron-builder config
 ├── .gitignore
 ├── README.md               ← This file
@@ -78,10 +80,12 @@ float-suite/
 │       └── build.yml       ← GitHub Actions: deb/rpm/pacman/AppImage/dmg/exe
 ├── electron/               ← Electron wrapper for native packaging
 │   ├── main.js             ← Main process (window, menu, native dialogs)
+│   ├── main-thesis.js      ← Thesis main process
+│   ├── main-notes.js       ← Notebase main process
 │   ├── preload.js          ← Minimal context bridge
 │   └── build/
 │       └── entitlements.mac.plist
-├── shared/                 ← Shared runtime (loaded by all 4 pages)
+├── shared/                 ← Shared runtime (loaded by all 5 pages)
 │   ├── float.css           ← Design tokens, HUD, modals, toasts
 │   ├── i18n.js             ← 8-language dictionary
 │   ├── float.js            ← HUD engine, theme, shortcuts, modal manager
@@ -91,6 +95,7 @@ float-suite/
 │   ├── paint.svg/png/ico   ← Paint.web (yellow + paint brush)
 │   ├── inkling.svg/png/ico ← Inkling (pink + Blooper squid)
 │   └── thesis.svg/png/ico  ← Thesis (blue + open book)
+│   └── notes.svg/png/ico   ← Notebase (purple + open book)
 └── README.md               ← This file
 ```
 
@@ -121,6 +126,9 @@ Press `?` in any app to see its full shortcut list. The most common ones:
 ### Thesis
 `Ctrl+B` bold · `Ctrl+I` italic · `Ctrl+U` underline · `Ctrl+F` find · `Ctrl+L` link · `Ctrl+K` reference · `Ctrl+Enter` page break · `F11` zen mode
 
+### Notebase
+`Ctrl+N` new note · `Ctrl+S` save · `Ctrl+Alt+D` daily note · `Ctrl+E` export · `Ctrl+F` search · `F11` focus mode (hide sidebar)
+
 ---
 
 ## Export formats
@@ -130,6 +138,7 @@ Press `?` in any app to see its full shortcut list. The most common ones:
 | Paint.web | PNG, JPEG, WebP, PDF, DOCX (image embedded), ODT |
 | Inkling | SVG, PNG, PDF |
 | Thesis | PDF, DOCX (true OOXML), ODT, HTML, TXT |
+| Notebase | Markdown, TXT, HTML, PDF, DOCX, ODT |
 
 ### How PDF export works
 The suite uses `jsPDF` (lazy-loaded from CDN). The canvas / paper is rasterized at 2× resolution, then sliced into A4 pages with proper margins.
@@ -148,6 +157,7 @@ The suite uses `jsPDF` (lazy-loaded from CDN). The canvas / paper is rasterized 
 | Thesis documents | `localStorage["thesis_docs"]` (array of `{name, content, standard, modified, wordCount, footnoteCount, cover}`) |
 | Thesis settings | `localStorage["thesis_settings"]` |
 | Thesis daily word count | `localStorage["thesis_words_<YYYY-MM-DD>")` |
+| Notebase notes | `localStorage["notebase_notes"]` (array of `{id, title, body, created, modified, pinned}`) |
 
 **Nothing else.** No cookies, no analytics, no network requests during normal use (except the one-time CDN load for export libraries).
 
@@ -160,6 +170,7 @@ JSON.stringify({
   settings: localStorage.getItem('thesis_settings'),
   paint: localStorage.getItem('paint_autosave'),
   inkling: localStorage.getItem('inkling_autosave'),
+  notes: localStorage.getItem('notebase_notes'),
   theme: localStorage.getItem('float_theme_mode'),
   lang: localStorage.getItem('float_lang')
 }, null, 2)
@@ -210,14 +221,15 @@ The suite ships as static HTML/CSS/JS — but it can be wrapped in Electron for 
 - Fixed Paint.web: magic wand, smudge, blur tools now work; invert selection implemented
 - Fixed Inkling: boolean ops (via clip-path / mask), align to artboard, snap-to-objects
 - Fixed Thesis: PDF export zoom bug fixed, page-break visual artifacts removed, autosave restored
+- New app: **Notebase** — local-first Markdown knowledge base (live preview, search, tags, wiki-links, backlinks, daily notes, MD/TXT/HTML/PDF/DOCX/ODT export)
 - Cross-app theme sync
 - Shortcuts help overlay
-- Autosave in Paint.web, Inkling, and Thesis
-- Removed dead code, AI-generated boilerplate comments, and unused variables across all four files
+- Autosave in Paint.web, Inkling, and Thesis; instant autosave in Notebase
+- Removed dead code, AI-generated boilerplate comments, and unused variables across all five files
 
 ### Suite 5.0
 - Initial release of the shared design system and i18n layer
-- Three apps unified under a single portal
+- Four apps unified under a single portal
 
 ---
 

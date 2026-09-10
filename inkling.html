@@ -52,7 +52,11 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
 
 /* Viewport */
 #viewport{flex:1;position:relative;overflow:hidden;background:var(--c-bg);background-image:radial-gradient(var(--c-border) 1px, transparent 1px);background-size:20px 20px;background-position:0 0}
-#viewport.show-grid{background-image:radial-gradient(var(--c-border) 1px, transparent 1px),linear-gradient(var(--c-border) 1px,transparent 1px),linear-gradient(90deg,var(--c-border) 1px,transparent 1px);background-size:20px 20px,20px 20px,20px 20px}
+#viewport.rulers-on .ruler{display:block}
+#viewport .ruler{position:absolute;background:var(--c-surface);z-index:5;overflow:hidden;pointer-events:none;display:none}
+#viewport .ruler-x{left:0;right:0;top:0;height:18px;border-bottom:1px solid var(--c-border)}
+#viewport .ruler-y{top:0;bottom:0;left:0;width:18px;border-right:1px solid var(--c-border)}
+#viewport .ruler-x canvas,#viewport .ruler-y canvas{width:100%;height:100%;display:block}
 #artboard-container{position:absolute;left:50%;top:50%;transform-origin:center center}
 #artboard{background:#fff;box-shadow:0 0 0 1px var(--c-border), 8px 8px 0 rgba(0,0,0,.08)}
 #artboard svg{display:block;cursor:default}
@@ -168,6 +172,8 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
         <svg id="artboard-svg" width="900" height="600" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
     </div>
+    <div class="ruler ruler-x"><canvas id="ruler-x-canvas"></canvas></div>
+    <div class="ruler ruler-y"><canvas id="ruler-y-canvas"></canvas></div>
   </main>
 
   <aside id="properties" aria-label="Properties">
@@ -344,6 +350,35 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
   </div>
 </div>
 
+<!-- Recover autosave modal -->
+<div class="modal-overlay" id="modal-recover">
+  <div class="modal">
+    <div class="modal-header"><h3 data-i18n="paint.recover_title">Recover Autosave</h3><button class="modal-close">×</button></div>
+    <div class="modal-body">
+      <p data-i18n="paint.recover_body">A previous autosave was found. Restore it?</p>
+      <p id="recover-time" style="opacity:.7;font-family:var(--font-ui);font-size:11px"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="recover-restore" data-i18n="paint.recover_restore">Restore</button>
+      <button class="btn" id="recover-discard" data-i18n="paint.recover_discard">Discard</button>
+    </div>
+  </div>
+</div>
+
+<!-- Text edit modal -->
+<div class="modal-overlay" id="modal-text">
+  <div class="modal">
+    <div class="modal-header"><h3 data-i18n="inkling.tool_text">Text</h3><button class="modal-close">×</button></div>
+    <div class="modal-body">
+      <div class="field"><input type="text" id="text-input" value="Text"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="text-ok">OK</button>
+      <button class="btn" onclick="Float.closeModal('modal-text')" data-i18n="common.cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   'use strict';
@@ -436,6 +471,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
       I.apply();
       I.on(() => { this.bindHUD(); this.renderLayers(); });
       this.centerView();
+      this.restoreAutosave();
       toast(I.t('inkling.toast_ready'), 'success', 1400);
     }
 
@@ -527,7 +563,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
         {id:'view.zoomReset', i18n:'common.zoom_reset', group:'view', run:() => this.setZoom(1)},
         {id:'view.fit', i18n:'common.fit', group:'view', run:() => this.centerView()},
         {id:'view.grid', i18n:'inkling.show_grid', group:'view', run:() => { this.showGrid = !this.showGrid; $('#chk-grid').checked = this.showGrid; $('#viewport').classList.toggle('show-grid', this.showGrid); }},
-        {id:'view.rulers', i18n:'inkling.show_rulers', group:'view', run:() => { this.showRulers = !this.showRulers; $('#chk-rulers').checked = this.showRulers; }},
+        {id:'view.rulers', i18n:'inkling.show_rulers', group:'view', run:() => this.toggleRulers()},
         {id:'view.snap', i18n:'inkling.snap_grid', group:'view', run:() => { this.snapEnabled = !this.snapEnabled; $('#chk-snap').checked = this.snapEnabled; }},
         {id:'view.snapObj', i18n:'inkling.snap_objects', group:'view', run:() => { this.snapObjects = !this.snapObjects; $('#chk-snap-obj').checked = this.snapObjects; }},
         {id:'help.shortcuts', i18n:'common.shortcuts', group:'help', run:() => Float.showShortcuts()},
@@ -588,6 +624,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
       this.zoom = clamp(z, 0.05, 32);
       this.container.style.transform = `translate(-50%, -50%) scale(${this.zoom})`;
       $('#sb-zoom').textContent = Math.round(this.zoom * 100) + '%';
+      this.renderRulers();
     }
 
     centerView(){
@@ -597,6 +634,74 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
       this.zoom = z;
       this.container.style.transform = `translate(-50%, -50%) scale(${this.zoom})`;
       $('#sb-zoom').textContent = Math.round(this.zoom * 100) + '%';
+      this.renderRulers();
+    }
+
+    toggleRulers(){
+      this.showRulers = !this.showRulers;
+      const c = $('#chk-rulers');
+      if(c) c.checked = this.showRulers;
+      this.renderRulers();
+      toast(this.showRulers ? I.t('paint.toast_rulers_on') : I.t('paint.toast_rulers_off'), 'info', 1200);
+    }
+    renderRulers(){
+      const vp = this.viewport;
+      if(!vp) return;
+      vp.classList.toggle('rulers-on', this.showRulers);
+      if(!this.showRulers) return;
+      const xr = $('.ruler-x'), yr = $('.ruler-y');
+      const xc = $('#ruler-x-canvas'), yc = $('#ruler-y-canvas');
+      if(!xr || !yr || !xc || !yc) return;
+      xc.width = Math.max(1, xr.clientWidth);
+      xc.height = Math.max(1, xr.clientHeight);
+      yc.width = Math.max(1, yr.clientWidth);
+      yc.height = Math.max(1, yr.clientHeight);
+      const vpRect = vp.getBoundingClientRect();
+      const svgRect = this.svg ? this.svg.getBoundingClientRect() : null;
+      if(!svgRect || !svgRect.width || !svgRect.height) return;
+      const sx = svgRect.width / Math.max(1, this.artW);
+      const sy = svgRect.height / Math.max(1, this.artH);
+      const A = svgRect.left - vpRect.left;
+      const B = svgRect.top - vpRect.top;
+      const css = getComputedStyle(document.documentElement);
+      const muted = css.getPropertyValue('--c-muted').trim() || '#888';
+      const steps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000];
+      let step = steps[steps.length - 1];
+      for(const s of steps){ if(s * sx >= 24){ step = s; break; } }
+      const xctx = xc.getContext('2d');
+      const yctx = yc.getContext('2d');
+      xctx.clearRect(0, 0, xc.width, xc.height);
+      yctx.clearRect(0, 0, yc.width, yc.height);
+      xctx.font = '9px "Space Mono", monospace';
+      xctx.fillStyle = muted;
+      xctx.strokeStyle = muted;
+      xctx.lineWidth = 1;
+      for(let px = -step * 20; px <= this.artW + step * 20; px += step){
+        const X = A + px * sx;
+        if(X < -120 || X > vpRect.width + 120) continue;
+        xctx.beginPath();
+        xctx.moveTo(X + 0.5, xc.height - 8);
+        xctx.lineTo(X + 0.5, xc.height);
+        xctx.stroke();
+        xctx.fillText(String(px), X + 3, 9);
+      }
+      yctx.font = '8px "Space Mono", monospace';
+      yctx.fillStyle = muted;
+      yctx.strokeStyle = muted;
+      yctx.lineWidth = 1;
+      for(let py = -step * 20; py <= this.artH + step * 20; py += step){
+        const Y = B + py * sy;
+        if(Y < -120 || Y > vpRect.height + 120) continue;
+        yctx.beginPath();
+        yctx.moveTo(yc.width - 8, Y + 0.5);
+        yctx.lineTo(yc.width, Y + 0.5);
+        yctx.stroke();
+        yctx.save();
+        yctx.translate(11, Y + 9);
+        yctx.rotate(-Math.PI / 2);
+        yctx.fillText(String(py), 0, 0);
+        yctx.restore();
+      }
     }
 
     /* ---- Tools ---- */
@@ -970,13 +1075,20 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
     }
 
     initTextEdit(target, e){
-      // Simple prompt-based text editing
-      const cur = target.textContent;
-      const newText = prompt(I.t('inkling.tool_text'), cur);
-      if(newText != null){
-        target.textContent = newText;
-        this.saveState('Edit text');
-      }
+      this.textTarget = target;
+      const input = $('#text-input');
+      if(input){ input.value = target.textContent; }
+      openModal('modal-text');
+      if(input){ requestAnimationFrame(() => { input.focus(); input.select(); }); }
+    }
+    applyTextEdit(){
+      const target = this.textTarget;
+      const input = $('#text-input');
+      this.textTarget = null;
+      closeModal('modal-text');
+      if(!target || !input) return;
+      target.textContent = input.value;
+      this.saveState('Edit text');
     }
 
     /* ---- Eyedropper ---- */
@@ -1085,9 +1197,10 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
       });
     }
 
-    nudge(dx, dy){
+    nudge(dx, dy, big){
       if(this.selectedIds.size === 0) return;
-      const big = event && event.shiftKey ? 10 : 1;
+      const ev = window.event;
+      if(big === undefined) big = (ev && ev.shiftKey) ? 10 : 1;
       this.selectedIds.forEach(id => {
         const el = document.getElementById(id);
         if(!el) return;
@@ -1606,7 +1719,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
     }
     undo(){
       if(!this._histStack || this._histStack.length < 2){
-        toast('Nothing to undo', 'warn', 1000);
+        toast(I.t('paint.toast_nothing_undo'), 'warn', 1000);
         return;
       }
       const cur = this._histStack.pop();
@@ -1614,19 +1727,18 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
       const prev = this._histStack[this._histStack.length - 1];
       this.deselect();
       this.layer.innerHTML = prev.svg;
-      this.saveState; // no-op
-      toast('Undo', 'info', 800);
+      toast(I.t('common.undo'), 'info', 800);
     }
     redo(){
       if(!this._histFuture || this._histFuture.length === 0){
-        toast('Nothing to redo', 'warn', 1000);
+        toast(I.t('paint.toast_nothing_redo'), 'warn', 1000);
         return;
       }
       const next = this._histFuture.pop();
       this._histStack.push(next);
       this.deselect();
       this.layer.innerHTML = next.svg;
-      toast('Redo', 'info', 800);
+      toast(I.t('common.redo'), 'info', 800);
     }
 
     /* ---- Import ---- */
@@ -1753,6 +1865,37 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
         }catch(e){}
       });
     }
+    restoreAutosave(){
+      let meta = null;
+      try{ meta = JSON.parse(localStorage.getItem('inkling_autosave_meta') || 'null'); }catch(e){}
+      const data = localStorage.getItem('inkling_autosave');
+      if(!meta || !data){ this._autosaveData = null; return; }
+      this._autosaveData = data;
+      this._autosaveMeta = meta;
+      const rt = $('#recover-time');
+      if(rt) rt.textContent = new Date(meta.time).toLocaleString(I.getLang());
+      openModal('modal-recover');
+    }
+    recoverRestore(){
+      const data = this._autosaveData, meta = this._autosaveMeta;
+      this._autosaveData = null;
+      closeModal('modal-recover');
+      if(!data || !meta) return;
+      const w = clamp(parseInt(meta.w,10) || 900, 50, 8000);
+      const h = clamp(parseInt(meta.h,10) || 600, 50, 8000);
+      this.resizeArtboard(w, h);
+      this.layer.innerHTML = data;
+      this.selectedIds.clear();
+      this.updatePropsFromSelection();
+      this.renderLayers();
+      try{ localStorage.removeItem('inkling_autosave'); localStorage.removeItem('inkling_autosave_meta'); }catch(e){}
+      toast(I.t('paint.toast_autosave_restored', {time: new Date(meta.time).toLocaleString(I.getLang())}), 'success', 2500);
+    }
+    recoverDiscard(){
+      this._autosaveData = null;
+      closeModal('modal-recover');
+      try{ localStorage.removeItem('inkling_autosave'); localStorage.removeItem('inkling_autosave_meta'); }catch(e){}
+    }
 
     /* ---- UI bindings ---- */
     bindUI(){
@@ -1833,7 +1976,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
 
       // View toggles
       $('#chk-grid').addEventListener('change', e => { this.showGrid = e.target.checked; this.viewport.classList.toggle('show-grid', this.showGrid); });
-      $('#chk-rulers').addEventListener('change', e => this.showRulers = e.target.checked);
+      $('#chk-rulers').addEventListener('change', e => { this.showRulers = e.target.checked; this.renderRulers(); });
       $('#chk-snap').addEventListener('change', e => this.snapEnabled = e.target.checked);
       $('#chk-snap-obj').addEventListener('change', e => this.snapObjects = e.target.checked);
       $('#grid-size').addEventListener('input', e => this.snapGrid = parseInt(e.target.value, 10) || 20);
@@ -1858,6 +2001,7 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
           const dx = e.clientX - this.panStart.x;
           const dy = e.clientY - this.panStart.y;
           this.container.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${this.zoom})`;
+          this.renderRulers();
         }
       });
       window.addEventListener('pointerup', () => {
@@ -1866,6 +2010,15 @@ body{display:flex;flex-direction:column;background:var(--c-bg)}
           this.viewport.style.cursor = '';
         }
       });
+
+      // Text modal
+      $('#text-ok').addEventListener('click', () => this.applyTextEdit());
+      $('#text-input').addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); this.applyTextEdit(); }
+      });
+      // Recover modal
+      $('#recover-restore').addEventListener('click', () => this.recoverRestore());
+      $('#recover-discard').addEventListener('click', () => this.recoverDiscard());
 
       // Window resize
       window.addEventListener('resize', () => this.centerView());

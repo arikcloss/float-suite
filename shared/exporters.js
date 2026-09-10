@@ -337,6 +337,37 @@
     opts = opts || {};
     const title = opts.title || (filename || 'Document').replace(/\.[^.]+$/, '');
     return ensureJSZip().then(JSZip => {
+      // Collect embedded (data URL) images so they can be stored in Pictures/
+      const images = [];
+      const imgNameBySrc = {};
+      let imgIdx = 0;
+      rootEl.querySelectorAll('img').forEach(img => {
+        const src = img.getAttribute('src') || '';
+        const m = src.match(/^data:image\/(png|jpeg|jpg|gif);base64,.+$/);
+        if(!m) return;
+        if(imgNameBySrc[src] !== undefined){
+          img.setAttribute('data-odt-img', imgNameBySrc[src]);
+          const orig = images.find(im => im.name === imgNameBySrc[src]);
+          const w = parseInt(img.getAttribute('width')||'',10) || (orig ? orig.w : 400);
+          const h = parseInt(img.getAttribute('height')||'',10) || (orig ? orig.h : 300);
+          img.setAttribute('data-odt-w', String(w));
+          img.setAttribute('data-odt-h', String(h));
+          return;
+        }
+        const type = m[1] === 'jpg' ? 'jpeg' : m[1];
+        const raw = atob(src.split(',')[1]);
+        const bytes = new Uint8Array(raw.length);
+        for(let i=0;i<raw.length;i++) bytes[i] = raw.charCodeAt(i);
+        const name = 'Pictures/image' + (++imgIdx) + '.' + (type === 'jpeg' ? 'jpg' : type);
+        const w = parseInt(img.getAttribute('width')||img.naturalWidth||400,10)||400;
+        const h = parseInt(img.getAttribute('height')||img.naturalHeight||300,10)||300;
+        images.push({name, bytes, type, w, h});
+        imgNameBySrc[src] = name;
+        img.setAttribute('data-odt-img', name);
+        img.setAttribute('data-odt-w', String(w));
+        img.setAttribute('data-odt-h', String(h));
+      });
+
       // Convert HTML to ODF content.xml body
       const bodyXML = htmlToODFXML(rootEl);
 
@@ -346,6 +377,9 @@
   xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
   xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
   xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
   office:version="1.2">
   <office:automatic-styles/>
   <office:body>
@@ -379,16 +413,20 @@
   </office:styles>
 </office:document-styles>`;
 
+      const entries = images.map(im =>
+        `  <manifest:file-entry manifest:media-type="image/${im.type}" manifest:full-path="${im.name}"/>`).join('\n');
       const manifestXML = `<?xml version="1.0" encoding="UTF-8"?>
 <manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
   <manifest:file-entry manifest:media-type="application/vnd.oasis.opendocument.text" manifest:full-path="/"/>
   <manifest:file-entry manifest:media-type="text/xml" manifest:full-path="content.xml"/>
   <manifest:file-entry manifest:media-type="text/xml" manifest:full-path="styles.xml"/>
+${entries}
 </manifest:manifest>`;
 
       const zip = new JSZip();
       // mimetype must be the first file and uncompressed
       zip.file('mimetype', 'application/vnd.oasis.opendocument.text', {compression:'STORE'});
+      images.forEach(im => zip.file(im.name, im.bytes));
       zip.file('META-INF/manifest.xml', manifestXML);
       zip.file('content.xml', contentXML);
       zip.file('styles.xml', stylesXML);
@@ -447,9 +485,15 @@
           case 'br':
             out.push('<text:line-break/>');
             break;
-          case 'img':
-            // Skip images in ODT (would require embedding; rare in our apps)
+          case 'img':{
+            const ds = child.getAttribute('data-odt-img');
+            if(ds){
+              const w = parseInt(child.getAttribute('data-odt-w'),10)||400;
+              const h = parseInt(child.getAttribute('data-odt-h'),10)||300;
+              out.push(`<text:p text:style-name="Body"><draw:frame text:anchor-type="paragraph" svg:width="${w}px" svg:height="${h}px"><draw:image xlink:href="${ds}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>`);
+            }
             break;
+          }
           case 'table':
             out.push('<table:table>');
             child.querySelectorAll('tr').forEach(tr => {

@@ -199,7 +199,7 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
 <header class="app-header">
   <div class="header-left">
     <a href="index.html" class="app-logo">THESIS</a>
-    <span class="version-badge">v3.1</span>
+    <span class="version-badge">v5.1.0</span>
   </div>
   <div class="header-right">
     <button class="btn btn-sm" id="btn-find" title="Find & Replace (Ctrl+H)"><i class="fa-solid fa-magnifying-glass"></i></button>
@@ -573,7 +573,6 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       I.apply();
       I.on(() => { this.bindHUD(); this.renderDocList(); this.updateStats(); this.updateCoverPlaceholders(); });
       this.updateStats();
-      this.startClock();
       this.updateOutline();
       toast(I.t('common.ready'), 'success', 1400);
     }
@@ -825,13 +824,33 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       try{
         regex = useRegex ? new RegExp(query, caseSensitive ? '' : 'i') : null;
       }catch(e){
-        toast('Invalid regex', 'danger'); return;
+        toast(I.t('thesis.toast_invalid_regex'), 'danger'); return;
       }
-      const text = this.editor.innerText;
+      if(regex){
+        // Regex search: walk text nodes and select the first match
+        const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT, null);
+        let node, found = false;
+        while((node = walker.nextNode())){
+          regex.lastIndex = 0;
+          const m = regex.exec(node.textContent);
+          if(m && m[0]){
+            const range = document.createRange();
+            range.setStart(node, m.index);
+            range.setEnd(node, m.index + m[0].length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            found = true;
+            break;
+          }
+        }
+        if(!found) toast(I.t('thesis.toast_not_found'), 'warn', 1000);
+        return;
+      }
       // Use window.find for native browser search (works for editable content)
       if(window.find){
         const found = window.find(query, caseSensitive, !forward, false, false, false, false);
-        if(!found) toast('Not found', 'warn', 1000);
+        if(!found) toast(I.t('thesis.toast_not_found'), 'warn', 1000);
       }
     }
     replaceNext(){
@@ -857,15 +876,21 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       const caseSensitive = $('#find-case').checked;
       nodes.forEach(node => {
         const text = node.textContent;
-        if(caseSensitive ? text.indexOf(find) >= 0 : text.toLowerCase().indexOf(find.toLowerCase()) >= 0){
-          const newText = caseSensitive ? text.split(find).join(replace) : text.replace(new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'), replace);
-          if(newText !== text){
-            node.textContent = newText;
-            count++;
+        if(caseSensitive){
+          let i = 0, c = 0;
+          while((i = text.indexOf(find, i)) !== -1){ c++; i += find.length; }
+          if(c > 0){
+            count += c;
+            node.textContent = text.split(find).join(replace);
           }
+        }else if(text.toLowerCase().indexOf(find.toLowerCase()) >= 0){
+          const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+          const c = (text.match(re) || []).length;
+          count += c;
+          node.textContent = text.replace(re, replace);
         }
       });
-      toast('Replaced ' + count + ' occurrence(s)', 'success');
+      toast(I.t('thesis.toast_replace_done', {count}), 'success');
       this.updateStats();
     }
 
@@ -905,9 +930,9 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       fn.style.marginTop = '6pt';
       fn.style.borderTop = '1px solid #000';
       fn.style.paddingTop = '4pt';
-      fn.innerHTML = '[' + this.footnoteCount + '] <em>Footnote text.</em>';
+      fn.innerHTML = '[' + this.footnoteCount + '] <em>' + I.t('thesis.footnote_sample') + '</em>';
       this.editor.appendChild(fn);
-      toast('Footnote ' + this.footnoteCount + ' inserted', 'success', 1200);
+      toast(I.t('thesis.toast_footnote'), 'success', 1200);
     }
     insertPageBreak(){
       this.saveRange();
@@ -957,6 +982,12 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
     updateTOC(){
       const containers = $$('.toc-container', this.editor);
       if(containers.length === 0) return;
+      const sig = Array.from(this.editor.querySelectorAll('h1, h2, h3, h4'))
+        .filter(h => !h.hasAttribute('data-toc-title'))
+        .map(h => h.tagName + '|' + (h.id || '') + '|' + (h.textContent || '').trim())
+        .join('·');
+      if(sig === this._tocSig) return;
+      this._tocSig = sig;
       // Number headings sequentially (skip the TOC title itself)
       const headings = Array.from(this.editor.querySelectorAll('h1, h2, h3, h4'))
         .filter(h => !h.hasAttribute('data-toc-title'));
@@ -1030,7 +1061,7 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       const tab = this.currentRefTab;
       const fields = {
         book: ['author','year','title','publisher','city','edition'],
-        article: ['author','year','title','journal','volume','issue','pages'],
+        article: ['author','year','title','journal','volume','issue','pages','city'],
         web: ['author','year','title','url','access'],
         thesis: ['author','year','title','school','type','city']
       };
@@ -1067,16 +1098,17 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       const std = this.currentStandard;
       const tab = this.currentRefTab;
       const A = (s) => (s || '').trim();
+      const ed = A(data.edition);
       if(tab === 'book'){
-        if(std === 'apa') return `${A(data.author)} (${A(data.year)}). <i>${A(data.title)}</i> (${A(data.edition)} ed.). ${A(data.publisher)}.`;
-        if(std === 'mla') return `${A(data.author)}. <i>${A(data.title)}</i>. ${A(data.edition)} ed., ${A(data.publisher)}, ${A(data.year)}.`;
+        if(std === 'apa') return `${A(data.author)} (${A(data.year)}). <i>${A(data.title)}</i>${ed ? ` (${ed} ed.)` : ''}. ${A(data.publisher)}.`;
+        if(std === 'mla') return `${A(data.author)}. <i>${A(data.title)}</i>.${ed ? ` ${ed} ed.,` : ''} ${A(data.publisher)}, ${A(data.year)}.`;
         // ABNT
-        return `${A(data.author).toUpperCase()}. ${A(data.title)}. ${A(data.edition)} ed. ${A(data.city)}: ${A(data.publisher)}, ${A(data.year)}.`;
+        return `${A(data.author).toUpperCase()}. ${A(data.title)}.${ed ? ` ${ed} ed.` : ''} ${A(data.city)}: ${A(data.publisher)}, ${A(data.year)}.`;
       }
       if(tab === 'article'){
         if(std === 'apa') return `${A(data.author)} (${A(data.year)}). ${A(data.title)}. <i>${A(data.journal)}</i>, ${A(data.volume)}(${A(data.issue)}), ${A(data.pages)}.`;
         if(std === 'mla') return `${A(data.author)}. "${A(data.title)}." <i>${A(data.journal)}</i>, vol. ${A(data.volume)}, no. ${A(data.issue)}, ${A(data.year)}, pp. ${A(data.pages)}.`;
-        return `${A(data.author).toUpperCase()}. ${A(data.title)}. <b>${A(data.journal)}</b>, ${A(data.city)}, v. ${A(data.volume)}, n. ${A(data.issue)}, p. ${A(data.pages)}, ${A(data.year)}.`;
+        return `${A(data.author).toUpperCase()}. ${A(data.title)}. <b>${A(data.journal)}</b>${A(data.city) ? `, ${A(data.city)}` : ''}, v. ${A(data.volume)}, n. ${A(data.issue)}, p. ${A(data.pages)}, ${A(data.year)}.`;
       }
       if(tab === 'web'){
         if(std === 'apa') return `${A(data.author)} (${A(data.year)}). <i>${A(data.title)}</i>. Retrieved ${A(data.access)}, from ${A(data.url)}`;
@@ -1109,7 +1141,7 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
     copyReference(){
       const html = this.formatRef(this.getRefData());
       const text = html.replace(/<[^>]+>/g, '');
-      navigator.clipboard.writeText(text).then(() => toast('Copied', 'success', 1000));
+      navigator.clipboard.writeText(text).then(() => toast(I.t('paint.toast_copied'), 'success', 1000));
     }
 
     /* ---- Outline ---- */
@@ -1155,7 +1187,9 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       const todayKey = 'thesis_words_' + today;
       const todayWords = parseInt(localStorage.getItem(todayKey) || '0', 10);
       const total = Math.max(todayWords, words);
-      localStorage.setItem(todayKey, String(total));
+      if(total !== todayWords){
+        try{ localStorage.setItem(todayKey, String(total)); }catch(e){}
+      }
       const pct = clamp((total / goal) * 100, 0, 100);
       $('#goal-fill').style.width = pct + '%';
       $('#goal-text').textContent = total + ' / ' + goal;
@@ -1177,7 +1211,7 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       try{
         localStorage.setItem('thesis_docs', JSON.stringify(this.documents));
       }catch(e){
-        toast('Storage quota exceeded', 'danger');
+        toast(I.t('thesis.toast_quota'), 'danger');
       }
     }
     renderDocList(){
@@ -1320,11 +1354,14 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       this.zoomLevel = clamp(z, 0.3, 2.5);
       this.paper.style.transform = `scale(${this.zoomLevel})`;
       this.paper.style.transformOrigin = 'top center';
+      const zr = $('#zoom-reset');
+      if(zr && Math.abs(this.zoomLevel - 1) < 0.01) zr.textContent = '100%';
+      else if(zr) zr.textContent = Math.round(this.zoomLevel * 100) + '%';
     }
     toggleZen(){
       document.body.classList.toggle('zen-mode');
       if(document.body.classList.contains('zen-mode')){
-        toast('Zen mode. Press F11 to exit.', 'info', 1500);
+        toast(I.t('thesis.toast_zen'), 'info', 1500);
       }
     }
 
@@ -1345,11 +1382,11 @@ footer .f-section .k{color:var(--c-muted);text-transform:uppercase;letter-spacin
       // Hide/show cover and page numbers
       if(!includeCover){
         const cover = exportNode.querySelector('#cover-page');
-        if(cover) cover.classList.remove('visible');
+        if(cover){ cover.classList.remove('visible'); cover.style.display = 'none'; }
       }
       if(!includePageNums){
         const pn = exportNode.querySelector('#page-numbers');
-        if(pn) pn.classList.remove('visible');
+        if(pn){ pn.classList.remove('visible'); pn.style.display = 'none'; }
       }
       // Remove editor-specific stuff
       exportNode.querySelectorAll('.page-break').forEach(el => {
@@ -1414,7 +1451,7 @@ a{color:#2D7DD2;text-decoration:underline}
     }
     exportPDF(node, name){
       // Use html2canvas + jsPDF
-      toast('Generating PDF…', 'info', 1500);
+      toast(I.t('thesis.toast_generating', {fmt:'PDF'}), 'info', 1500);
       // Insert the node into a temporary visible container so html2canvas can render it
       const tempContainer = document.createElement('div');
       tempContainer.style.position = 'fixed';
@@ -1440,20 +1477,20 @@ a{color:#2D7DD2;text-decoration:underline}
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
         s.onload = doExport;
-        s.onerror = () => { tempContainer.remove(); toast('Failed to load html2canvas', 'danger'); };
+        s.onerror = () => { tempContainer.remove(); toast(I.t('thesis.toast_failed_html2canvas'), 'danger'); };
         document.head.appendChild(s);
       }else{
         doExport();
       }
     }
     exportDOCX(node, name){
-      toast('Generating DOCX…', 'info', 1500);
+      toast(I.t('thesis.toast_generating', {fmt:'DOCX'}), 'info', 1500);
       FloatExport.htmlToDocx(node, name, {title:name, author:'Float Suite Thesis'})
         .then(() => { toast(I.t('thesis.toast_export_docx'), 'success'); closeModal('modal-export'); })
         .catch(err => { console.error(err); toast(I.t('common.failed') + ': ' + err.message, 'danger'); });
     }
     exportODT(node, name){
-      toast('Generating ODT…', 'info', 1500);
+      toast(I.t('thesis.toast_generating', {fmt:'ODT'}), 'info', 1500);
       FloatExport.htmlToODT(node, name, {title:name})
         .then(() => { toast(I.t('thesis.toast_export_odt'), 'success'); closeModal('modal-export'); })
         .catch(err => { console.error(err); toast(I.t('common.failed') + ': ' + err.message, 'danger'); });
@@ -1501,13 +1538,6 @@ a{color:#2D7DD2;text-decoration:underline}
       ind.classList.add('visible');
       clearTimeout(this._writeTimer);
       this._writeTimer = setTimeout(() => ind.classList.remove('visible'), 1200);
-    }
-
-    /* ---- Clock ---- */
-    startClock(){
-      setInterval(() => {
-        // Could update a clock display, but the footer is small
-      }, 60000);
     }
 
     /* ---- Date formatting ---- */
@@ -1638,7 +1668,7 @@ a{color:#2D7DD2;text-decoration:underline}
       $('#img-insert').addEventListener('click', () => {
         const url = $('#img-url').value;
         const src = this._pendingImg || url;
-        if(!src){ toast('Pick a file or enter URL', 'warn'); return; }
+        if(!src){ toast(I.t('thesis.toast_image_required'), 'warn'); return; }
         this.insertImage(src, $('#img-alt').value);
         closeModal('modal-image');
         this._pendingImg = null;
@@ -1655,7 +1685,7 @@ a{color:#2D7DD2;text-decoration:underline}
       $('#link-insert').addEventListener('click', () => {
         const text = $('#link-text').value;
         const url = $('#link-url').value;
-        if(!url){ toast('URL required', 'warn'); return; }
+        if(!url){ toast(I.t('thesis.toast_url_required'), 'warn'); return; }
         this.insertLink(text || url, url);
         closeModal('modal-link');
       });
