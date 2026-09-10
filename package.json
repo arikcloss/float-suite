@@ -35,7 +35,7 @@
     "pack": "electron-builder --dir --config apps/paint.json --publish never"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
   }
 }

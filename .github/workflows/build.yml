@@ -20,7 +20,7 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
-  ELECTRON_BUILDER_VERSION: '24.13.3'
+  ELECTRON_BUILDER_VERSION: '26.15.3'
 
 jobs:
   build-linux:
